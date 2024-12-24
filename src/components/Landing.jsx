@@ -3,23 +3,24 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
 
+
 const FullSizeModel = ({ src, width = "100%", height = "100%" }) => {
     const containerRef = useRef(null);
     const modelRef = useRef(null);
     const initialPositionRef = useRef(null);
-    const isClickedRef = useRef(false);
 
     useEffect(() => {
         const scene = new THREE.Scene();
         const renderer = new THREE.WebGLRenderer({
             antialias: true,
-            alpha: true,
+            alpha: true, // Enable transparency
             physicallyCorrectLights: true,
         });
         renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.5;
+        renderer.toneMappingExposure = 2.0;
         renderer.outputEncoding = THREE.sRGBEncoding;
+        renderer.setClearColor(0x000000, 0); // Set clear color to transparent
         containerRef.current.appendChild(renderer.domElement);
 
         const camera = new THREE.PerspectiveCamera(
@@ -30,66 +31,21 @@ const FullSizeModel = ({ src, width = "100%", height = "100%" }) => {
         );
 
         // Lighting setup
-        const ambientLight = new THREE.AmbientLight(0xffffff, 1.0); // Increased ambient light intensity
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
         scene.add(ambientLight);
 
-        const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0); // Sky and ground light
-        scene.add(hemisphereLight);
+        const pointLight = new THREE.PointLight(0xffffff, 2);
+        pointLight.position.set(5, 10, 5);
+        scene.add(pointLight);
 
-        const directionalLight1 = new THREE.DirectionalLight(0xffffff, 1.2); // Increased intensity
-        directionalLight1.position.set(5, 10, 5);
-        scene.add(directionalLight1);
-
-        const directionalLight2 = new THREE.DirectionalLight(0xffffff, 1.0);
-        directionalLight2.position.set(-5, -10, 5);
-        scene.add(directionalLight2);
-
-        const directionalLight3 = new THREE.DirectionalLight(0xffffff, 0.8);
-        directionalLight3.position.set(5, -10, -5);
-        scene.add(directionalLight3);
-
-        const directionalLight4 = new THREE.DirectionalLight(0xffffff, 0.8);
-        directionalLight4.position.set(-5, 10, -5);
-        scene.add(directionalLight4);
-
-        const raycaster = new THREE.Raycaster();
-        const mouse = new THREE.Vector2();
-        let mousePosition = { x: 0, y: 0 };
-
-        const handleMouseMove = (event) => {
-            const rect = containerRef.current.getBoundingClientRect();
-            mouse.x = ((event.clientX - rect.left) / containerRef.current.clientWidth) * 2 - 1;
-            mouse.y = -((event.clientY - rect.top) / containerRef.current.clientHeight) * 2 + 1;
-            mousePosition = {
-                x: (event.clientX - rect.left) / containerRef.current.clientWidth - 0.5,
-                y: (event.clientY - rect.top) / containerRef.current.clientHeight - 0.5,
-            };
-        };
-
-        const handleMouseDown = (event) => {
-            const rect = containerRef.current.getBoundingClientRect();
-            mouse.x = ((event.clientX - rect.left) / containerRef.current.clientWidth) * 2 - 1;
-            mouse.y = -((event.clientY - rect.top) / containerRef.current.clientHeight) * 2 + 1;
-
-            if (modelRef.current) {
-                raycaster.setFromCamera(mouse, camera);
-                const intersects = raycaster.intersectObject(modelRef.current, true);
-                if (intersects.length > 0) {
-                    isClickedRef.current = true;
-                }
-            }
-        };
-
-        const handleMouseUp = () => {
-            isClickedRef.current = false;
-        };
-
-        containerRef.current.addEventListener("mousemove", handleMouseMove);
-        containerRef.current.addEventListener("mousedown", handleMouseDown);
-        window.addEventListener("mouseup", handleMouseUp);
+        // Load environment map using equirectangular texture for reflections only
+        const textureLoader = new THREE.TextureLoader();
+        textureLoader.load("/textures/image_7.png", (texture) => {
+            texture.mapping = THREE.EquirectangularReflectionMapping;
+            scene.environment = texture; // Set as the environment map (not the background)
+        });
 
         const loader = new GLTFLoader();
-
         loader.load(
             src,
             (gltf) => {
@@ -98,28 +54,20 @@ const FullSizeModel = ({ src, width = "100%", height = "100%" }) => {
 
                 model.traverse((child) => {
                     if (child.isMesh) {
-                        const materialName = child.material.name.toLowerCase();
-
-                        // Adjust material properties for better visibility with lights
-                        if (materialName.includes("dymond")) {
-                            child.material.color.set(0xffffff); // Bright white
-                            child.material.emissive.set(0xffffff); // Glow effect
-                            child.material.reflectivity = 1.0; // Maximum reflectivity
-                            child.material.metalness = 0.9; // High metalness
-                            child.material.roughness = 0.1; // Low roughness
-                        } else if (materialName.includes("silver")) {
-                            child.material.color.set(0xc0c0c0); // Light silver tone
-                            child.material.emissive.set(0x000000); // No emissive glow
-                            child.material.reflectivity = 0.8; // High reflectivity
-                            child.material.metalness = 1.0; // Fully metallic
-                            child.material.roughness = 0.2; // Slight roughness
-                            child.material.shininess = 30; // Added shine
-                        }
+                        child.material.needsUpdate = true;
+                        child.material.metalness = 1.0; // Fully metallic
+                        child.material.roughness = 0.05; // Polished, shiny surface
+                        child.material.color.set(0xc0c0c0); // Silver color
+                        child.material.envMapIntensity = 1.5; // Enhance reflections
+                        // Remove transparency to avoid glass-like appearance
+                        child.material.transparent = false;
+                        child.material.opacity = 1.0;
                     }
                 });
 
                 scene.add(model);
 
+                // Center the model
                 const box = new THREE.Box3().setFromObject(model);
                 const size = box.getSize(new THREE.Vector3());
                 const center = box.getCenter(new THREE.Vector3());
@@ -135,9 +83,11 @@ const FullSizeModel = ({ src, width = "100%", height = "100%" }) => {
 
                 initialPositionRef.current = model.position.clone();
 
-                const distance = maxDimension * 1.8;
-                camera.position.set(0, distance * 0.2, distance);
-                camera.lookAt(0, 0, 0);
+                
+
+                const distance = maxDimension * 2; // Adjust distance as needed
+camera.position.set(0, distance, 0); // Top view: above the model
+camera.lookAt(0, 0, 0); // Focus on the model center
             },
             undefined,
             (error) => {
@@ -154,20 +104,7 @@ const FullSizeModel = ({ src, width = "100%", height = "100%" }) => {
             requestAnimationFrame(animate);
 
             if (modelRef.current) {
-                if (isClickedRef.current) {
-                    const targetX = initialPositionRef.current.x + mousePosition.x * 2;
-                    const targetY = initialPositionRef.current.y - mousePosition.y * 2;
-
-                    modelRef.current.position.x += (targetX - modelRef.current.position.x) * 0.1;
-                    modelRef.current.position.y += (targetY - modelRef.current.position.y) * 0.1;
-
-                    modelRef.current.rotation.x += (mousePosition.y * 0.2 - modelRef.current.rotation.x) * 0.1;
-                    modelRef.current.rotation.y += (mousePosition.x * 0.2 - modelRef.current.rotation.y) * 0.1;
-                } else {
-                    modelRef.current.position.lerp(initialPositionRef.current, 0.1);
-                    modelRef.current.rotation.y += 0.003;
-                    modelRef.current.rotation.x *= 0.95;
-                }
+                modelRef.current.rotation.y += 0.003; // Slow rotation
             }
 
             controls.update();
@@ -190,9 +127,6 @@ const FullSizeModel = ({ src, width = "100%", height = "100%" }) => {
 
         return () => {
             window.removeEventListener("resize", handleResize);
-            containerRef.current?.removeEventListener("mousemove", handleMouseMove);
-            containerRef.current?.removeEventListener("mousedown", handleMouseDown);
-            window.removeEventListener("mouseup", handleMouseUp);
             renderer.dispose();
             if (containerRef.current) {
                 containerRef.current.removeChild(renderer.domElement);
@@ -208,11 +142,14 @@ const FullSizeModel = ({ src, width = "100%", height = "100%" }) => {
                 height,
                 overflow: "hidden",
                 position: "relative",
-                backgroundColor: "transparent",
+                backgroundColor: "transparent", // Ensure the div background is transparent
             }}
         ></div>
     );
 };
+
+
+
 
 
 
